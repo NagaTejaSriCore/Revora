@@ -93,12 +93,14 @@ export async function POST(request: Request) {
       );
     }
 
+    const cartVal = Number(session.cart_value) || 0;
+
     const prompt = `
 You are Revora's AI checkout abandonment recovery agent. Your job is to analyze details of an abandoned customer checkout session and return a structured diagnosis along with a recommended recovery strategy.
 
 ABANDONED CHECKOUT SESSION DETAILS:
 - Session ID: ${session.session_id}
-- Cart Value: ₹${session.cart_value || 0}
+- Cart Value: ₹${cartVal}
 - Item Count: ${session.item_count || 1}
 - Customer Email: ${session.customer_email || "not provided"}
 - Customer Phone: ${session.customer_phone || "not provided"}
@@ -111,6 +113,9 @@ CRITICAL INSTRUCTIONS:
 1. Reason Categories allowed: "checkout_friction", "payment_uncertainty", "payment_method_issue", "price_sensitivity", "technical_issue", "customer_inactivity", "unknown".
 2. Action Types allowed: "retry_payment", "alternative_payment_method", "payment_link", "customer_notification".
 3. Do NOT claim certainty if available information is insufficient (e.g., if the customer simply left at the payment page and there is no error code, classify reason_category as "customer_inactivity" or "unknown" and state clearly in the diagnosis that the exact reason cannot be determined with certainty). Do not invent facts.
+4. RECOVERY STRATEGY SELECTION RULE:
+- If checkout session status is ABANDONED and cart_value > 0 and no payment has completed, the preferred action_type MUST be "payment_link" so the merchant can issue a direct recovery payment link for ₹${cartVal}.
+- Select "customer_notification" ONLY if cart_value is 0/missing or no payment link can safely be generated.
 `;
 
     // Initialize Google GenAI client
@@ -211,11 +216,21 @@ CRITICAL INSTRUCTIONS:
     if (!validatedAnalysis) {
       validatedAnalysis = {
         diagnosis: `Customer exited at ${session.last_checkout_step || "payment page"} without completing payment. Exact cause cannot be determined with certainty due to lack of error logs.`,
-        recommended_action: "Generate a custom recovery payment link and send a reminder notification.",
-        confidence: 0.4,
+        recommended_action: cartVal > 0
+          ? `Generate a custom recovery payment link for ₹${cartVal.toLocaleString("en-IN")} allowing the customer to complete their outstanding checkout directly.`
+          : "Log customer notification reminder for abandoned session.",
+        confidence: 0.75,
         reason_category: "customer_inactivity",
-        action_type: "payment_link",
+        action_type: cartVal > 0 ? "payment_link" : "customer_notification",
       };
+    }
+
+    // Action Selection Rule: If abandoned session has recoverable cart_value > 0 and no completed payment, enforce payment_link as preferred action_type
+    if (cartVal > 0 && session.status === "ABANDONED") {
+      validatedAnalysis.action_type = "payment_link";
+      if (!validatedAnalysis.recommended_action || validatedAnalysis.recommended_action.includes("notification")) {
+        validatedAnalysis.recommended_action = `Generate a custom recovery payment link for ₹${cartVal.toLocaleString("en-IN")} allowing the customer to complete their outstanding checkout directly.`;
+      }
     }
 
     // Cache the analysis result for duplicate protection
