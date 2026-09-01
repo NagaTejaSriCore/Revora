@@ -120,51 +120,31 @@ export async function POST(request: NextRequest) {
         );
       }
 
-      console.log("PAYMENT FAILED");
+      console.log("PAYMENT FAILED WEBHOOK RECORDED");
       console.log("Payment ID:", payment.id);
       console.log("Order ID:", payment.order_id);
       console.log("Amount:", payment.amount);
       console.log("Currency:", payment.currency);
-      console.log("Method:", payment.method);
-      console.log("Email:", payment.email);
-      console.log("Contact:", payment.contact);
-      console.log("Error Code:", payment.error_code);
-      console.log("Failure:", payment.error_description);
 
       // ============================================
-      // 8. CHECK IF PAYMENT ALREADY EXISTS
+      // 8. CHECK IF PAYMENT ALREADY EXISTS BY PAYMENT ID OR ORDER ID
       // ============================================
 
-      console.log("========== PAYMENT LOOKUP ==========");
-      console.log("Razorpay Payment ID:", payment.id);
-
-      const {
-        data: existingPayment,
-        error: existingError,
-      } = await supabase
+      const { data: existingByPayment } = await supabase
         .from("payments")
         .select("id")
         .eq("razorpay_payment_id", payment.id)
         .maybeSingle();
 
-      console.log("Existing payment:", existingPayment);
-      console.log("Lookup error:", existingError);
-      console.log("====================================");
+      let existingPayment = existingByPayment;
 
-      if (existingError) {
-        console.error(
-          "========== PAYMENT LOOKUP ERROR =========="
-        );
-        console.error("Message:", existingError.message);
-        console.error("Details:", existingError.details);
-        console.error("Hint:", existingError.hint);
-        console.error("Code:", existingError.code);
-        console.error("==========================================");
-
-        return NextResponse.json(
-          { error: "Database lookup failed" },
-          { status: 500 }
-        );
+      if (!existingPayment && payment.order_id) {
+        const { data: existingByOrder } = await supabase
+          .from("payments")
+          .select("id")
+          .eq("razorpay_order_id", payment.order_id)
+          .maybeSingle();
+        existingPayment = existingByOrder;
       }
 
       let paymentRecord;
@@ -174,14 +154,14 @@ export async function POST(request: NextRequest) {
       // ============================================
 
       if (existingPayment) {
-        console.log("Payment already exists. Updating...");
+        console.log("Payment/Order record exists. Updating to failed...", existingPayment.id);
 
         const { data, error } = await supabase
           .from("payments")
           .update({
+            razorpay_payment_id: payment.id,
             status: "failed",
-            failure_reason:
-              payment.error_description || "Payment failed",
+            failure_reason: payment.error_description || "Payment failed",
             method: payment.method || null,
             email: payment.email || null,
             contact: payment.contact || null,
@@ -191,15 +171,7 @@ export async function POST(request: NextRequest) {
           .single();
 
         if (error) {
-          console.error(
-            "========== PAYMENT UPDATE ERROR =========="
-          );
-          console.error("Message:", error.message);
-          console.error("Details:", error.details);
-          console.error("Hint:", error.hint);
-          console.error("Code:", error.code);
-          console.error("==========================================");
-
+          console.error("========== PAYMENT UPDATE ERROR ==========", error);
           return NextResponse.json(
             { error: "Payment update failed" },
             { status: 500 }
@@ -208,22 +180,19 @@ export async function POST(request: NextRequest) {
 
         paymentRecord = data;
       } else {
-        console.log("========== INSERTING PAYMENT ==========");
+        console.log("========== INSERTING FAILED PAYMENT ==========");
 
         const paymentData = {
           razorpay_payment_id: payment.id,
-          razorpay_order_id: payment.order_id,
+          razorpay_order_id: payment.order_id || null,
           amount: payment.amount,
-          currency: payment.currency,
+          currency: payment.currency || "INR",
           status: "failed",
           method: payment.method || null,
           email: payment.email || null,
           contact: payment.contact || null,
-          failure_reason:
-            payment.error_description || "Payment failed",
+          failure_reason: payment.error_description || "Payment failed",
         };
-
-        console.log("Payment data:", paymentData);
 
         const { data, error } = await supabase
           .from("payments")
@@ -232,21 +201,7 @@ export async function POST(request: NextRequest) {
           .single();
 
         if (error) {
-          console.error(
-            "========== SUPABASE PAYMENT INSERT ERROR =========="
-          );
-          console.error("Message:", error.message);
-          console.error("Details:", error.details);
-          console.error("Hint:", error.hint);
-          console.error("Code:", error.code);
-          console.error(
-            "Full error:",
-            JSON.stringify(error)
-          );
-          console.error(
-            "===================================================="
-          );
-
+          console.error("========== SUPABASE PAYMENT INSERT ERROR ==========", error);
           return NextResponse.json(
             { error: "Payment insertion failed" },
             { status: 500 }
@@ -256,42 +211,17 @@ export async function POST(request: NextRequest) {
         paymentRecord = data;
       }
 
-      console.log("Payment saved:", paymentRecord.id);
+      console.log("Failed payment record saved:", paymentRecord.id);
 
       // ============================================
-      // 10. CREATE RECOVERY CASE
+      // 10. CREATE RECOVERY CASE FOR FAILED PAYMENT
       // ============================================
 
-      console.log("========== RECOVERY CASE LOOKUP ==========");
-
-      const {
-        data: existingCase,
-        error: caseCheckError,
-      } = await supabase
+      const { data: existingCase } = await supabase
         .from("recovery_cases")
         .select("id")
         .eq("payment_id", paymentRecord.id)
         .maybeSingle();
-
-      console.log("Existing recovery case:", existingCase);
-      console.log("Recovery lookup error:", caseCheckError);
-      console.log("==========================================");
-
-      if (caseCheckError) {
-        console.error(
-          "========== RECOVERY CASE LOOKUP ERROR =========="
-        );
-        console.error("Message:", caseCheckError.message);
-        console.error("Details:", caseCheckError.details);
-        console.error("Hint:", caseCheckError.hint);
-        console.error("Code:", caseCheckError.code);
-        console.error("=================================================");
-
-        return NextResponse.json(
-          { error: "Recovery case lookup failed" },
-          { status: 500 }
-        );
-      }
 
       if (!existingCase) {
         console.log("========== CREATING RECOVERY CASE ==========");
@@ -299,56 +229,28 @@ export async function POST(request: NextRequest) {
         const recoveryData = {
           payment_id: paymentRecord.id,
           risk_amount: payment.amount,
-          failure_reason:
-            payment.error_description || "Payment failed",
+          failure_reason: payment.error_description || "Payment failed",
           ai_diagnosis: null,
           recommended_action: null,
           action_status: "pending",
           recovered_amount: 0,
         };
 
-        console.log("Recovery data:", recoveryData);
-
-        const {
-          data: recoveryCase,
-          error,
-        } = await supabase
+        const { data: recoveryCase, error } = await supabase
           .from("recovery_cases")
           .insert(recoveryData)
           .select()
           .single();
 
         if (error) {
-          console.error(
-            "========== SUPABASE RECOVERY CASE ERROR =========="
-          );
-          console.error("Message:", error.message);
-          console.error("Details:", error.details);
-          console.error("Hint:", error.hint);
-          console.error("Code:", error.code);
-          console.error(
-            "Full error:",
-            JSON.stringify(error)
-          );
-          console.error(
-            "=================================================="
-          );
-
+          console.error("========== SUPABASE RECOVERY CASE ERROR ==========", error);
           return NextResponse.json(
             { error: "Recovery case creation failed" },
             { status: 500 }
           );
         }
 
-        console.log(
-          "Recovery case created:",
-          recoveryCase.id
-        );
-      } else {
-        console.log(
-          "Recovery case already exists:",
-          existingCase.id
-        );
+        console.log("Recovery case created:", recoveryCase.id);
       }
     }
 
@@ -360,36 +262,121 @@ export async function POST(request: NextRequest) {
       const payment = event.payload?.payment?.entity;
 
       if (payment) {
-        console.log("PAYMENT CAPTURED");
-        console.log("Payment ID:", payment.id);
-        console.log("Order ID:", payment.order_id);
+        console.log("PAYMENT CAPTURED WEBHOOK RECEIVED");
+        console.log("Razorpay Payment ID:", payment.id);
+        console.log("Razorpay Order ID:", payment.order_id);
+        console.log("Amount:", payment.amount);
 
-        const { error } = await supabase
+        // 1. Lookup existing payment record in database by payment_id or order_id
+        const { data: existingByPayment } = await supabase
           .from("payments")
-          .update({
-            status: "captured",
-          })
-          .eq("razorpay_payment_id", payment.id);
+          .select("id")
+          .eq("razorpay_payment_id", payment.id)
+          .maybeSingle();
 
-        if (error) {
-          console.error(
-            "========== CAPTURED PAYMENT UPDATE ERROR =========="
-          );
-          console.error("Message:", error.message);
-          console.error("Details:", error.details);
-          console.error("Hint:", error.hint);
-          console.error("Code:", error.code);
-          console.error(
-            "===================================================="
-          );
+        let existingPayment = existingByPayment;
 
-          return NextResponse.json(
-            { error: "Payment update failed" },
-            { status: 500 }
-          );
+        if (!existingPayment && payment.order_id) {
+          const { data: existingByOrder } = await supabase
+            .from("payments")
+            .select("id")
+            .eq("razorpay_order_id", payment.order_id)
+            .maybeSingle();
+          existingPayment = existingByOrder;
         }
 
-        console.log("Captured payment updated successfully");
+        let capturedPaymentRecord;
+
+        if (existingPayment) {
+          console.log("Updating existing payment status to captured:", existingPayment.id);
+          const { data, error } = await supabase
+            .from("payments")
+            .update({
+              razorpay_payment_id: payment.id,
+              razorpay_order_id: payment.order_id || null,
+              status: "captured",
+              amount: payment.amount,
+              method: payment.method || undefined,
+              email: payment.email || undefined,
+              contact: payment.contact || undefined,
+              failure_reason: null,
+            })
+            .eq("id", existingPayment.id)
+            .select()
+            .single();
+
+          if (error) {
+            console.error("========== CAPTURED PAYMENT UPDATE ERROR ==========", error);
+            return NextResponse.json({ error: "Payment update failed" }, { status: 500 });
+          }
+          capturedPaymentRecord = data;
+        } else {
+          console.log("Inserting new captured payment record into payments table...");
+          const paymentData = {
+            razorpay_payment_id: payment.id,
+            razorpay_order_id: payment.order_id || null,
+            amount: payment.amount,
+            currency: payment.currency || "INR",
+            status: "captured",
+            method: payment.method || null,
+            email: payment.email || null,
+            contact: payment.contact || null,
+            failure_reason: null,
+          };
+
+          const { data, error } = await supabase
+            .from("payments")
+            .insert(paymentData)
+            .select()
+            .single();
+
+          if (error) {
+            console.error("========== CAPTURED PAYMENT INSERT ERROR ==========", error);
+            return NextResponse.json({ error: "Payment insertion failed" }, { status: 500 });
+          }
+          capturedPaymentRecord = data;
+        }
+
+        console.log("Captured payment record processed:", capturedPaymentRecord.id);
+
+        // 2. Reconcile associated recovery case if this payment was a recovery payment
+        const recoveryCaseId = payment.notes?.recovery_case_id;
+
+        if (recoveryCaseId) {
+          console.log("Updating recovery case from notes:", recoveryCaseId);
+          const { error: caseUpdateError } = await supabase
+            .from("recovery_cases")
+            .update({
+              payment_id: capturedPaymentRecord.id,
+              recovered_amount: payment.amount,
+              action_status: "completed"
+            })
+            .eq("id", recoveryCaseId);
+
+          if (caseUpdateError) {
+            console.error("========== RECOVERY CASE UPDATE ERROR ==========", caseUpdateError);
+          } else {
+            console.log("Recovery case successfully reconciled and marked as completed!");
+          }
+        } else {
+          // Fallback check: update recovery case linked via payment_id
+          const { data: linkedCase } = await supabase
+            .from("recovery_cases")
+            .select("id")
+            .eq("payment_id", capturedPaymentRecord.id)
+            .maybeSingle();
+
+          if (linkedCase) {
+            console.log("Updating recovery case from linked payment:", linkedCase.id);
+            await supabase
+              .from("recovery_cases")
+              .update({
+                recovered_amount: payment.amount,
+                action_status: "completed"
+              })
+              .eq("id", linkedCase.id);
+          }
+        }
       }
     }
 
@@ -406,11 +393,7 @@ export async function POST(request: NextRequest) {
       received: true,
     });
   } catch (error) {
-    console.error(
-      "========== WEBHOOK PROCESSING ERROR =========="
-    );
-    console.error(error);
-    console.error("===============================================");
+    console.error("========== WEBHOOK PROCESSING ERROR ==========", error);
 
     return NextResponse.json(
       {
