@@ -23,6 +23,34 @@ const CATEGORIES_ORDER = [
 
 import { verifyMerchantAuth } from "@/lib/authServer";
 
+/**
+ * Fallback pattern matcher for raw failure_reason strings when AI diagnosis is missing or unknown.
+ */
+function normalizeRawFailureReason(rawReason?: string | null): string {
+  if (!rawReason) return "unknown";
+  const lower = rawReason.toLowerCase();
+
+  if (lower.includes("authentication") || lower.includes("auth")) {
+    return "authentication_failure";
+  }
+  if (lower.includes("insufficient")) {
+    return "insufficient_funds";
+  }
+  if (lower.includes("declined")) {
+    return "card_declined";
+  }
+  if (lower.includes("network") || lower.includes("gateway network")) {
+    return "network_error";
+  }
+  if (lower.includes("expired") || lower.includes("payment method")) {
+    return "payment_method_issue";
+  }
+  if (lower.includes("bank")) {
+    return "bank_issue";
+  }
+  return "unknown";
+}
+
 export async function GET(req: Request) {
   const authResult = await verifyMerchantAuth(req);
   if (!authResult.authenticated) {
@@ -43,10 +71,10 @@ export async function GET(req: Request) {
 
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-    // Query recovery cases table
+    // Query recovery cases table with joined payments failure_reason
     const { data: recoveryCases, error } = await supabase
       .from("recovery_cases")
-      .select("id, risk_amount, recovered_amount, action_status, ai_diagnosis");
+      .select("id, risk_amount, recovered_amount, action_status, ai_diagnosis, payments(failure_reason)");
 
     if (error) {
       console.error("Error fetching recovery cases for analytics:", error);
@@ -73,18 +101,28 @@ export async function GET(req: Request) {
       };
     });
 
-    // Group cases by reason_category
-    cases.forEach((c) => {
+    // Group cases by reason_category with AI priority & raw string fallback
+    cases.forEach((c: any) => {
       let category = "unknown";
+
+      // 1. Preferred source: AI diagnosis reason_category if valid and present
       if (c.ai_diagnosis) {
         try {
           const parsed = typeof c.ai_diagnosis === "string" ? JSON.parse(c.ai_diagnosis) : c.ai_diagnosis;
-          if (parsed && typeof parsed.reason_category === "string" && CATEGORIES_ORDER.includes(parsed.reason_category)) {
+          if (parsed && typeof parsed.reason_category === "string" && CATEGORIES_ORDER.includes(parsed.reason_category) && parsed.reason_category !== "unknown") {
             category = parsed.reason_category;
           }
         } catch (e) {
-          category = "unknown";
+          // Fallback to raw reason matching if JSON parse fails
         }
+      }
+
+      // 2. Fallback source: Normalize raw failure_reason from joined payments if AI category is missing or unknown
+      if (category === "unknown") {
+        const rawReason = Array.isArray(c.payments)
+          ? c.payments[0]?.failure_reason
+          : c.payments?.failure_reason;
+        category = normalizeRawFailureReason(rawReason);
       }
 
       if (!categoryStats[category]) {
