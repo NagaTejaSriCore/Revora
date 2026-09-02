@@ -11,23 +11,13 @@ interface AbandonedCheckoutsSectionProps {
 }
 
 export default function AbandonedCheckoutsSection({
-  sessions,
+  sessions = [],
   onSelectSession,
   onAnalyzeSession,
   analyzingId,
 }: AbandonedCheckoutsSectionProps) {
-  if (!sessions || sessions.length === 0) {
-    return (
-      <div className="p-8 rounded-2xl bg-white border border-slate-200 dark:bg-[#141326]/90 dark:border-purple-900/20 shadow-md text-center space-y-2">
-        <h3 className="text-sm font-bold text-slate-900 dark:text-white uppercase tracking-wider">
-          Abandoned Checkouts
-        </h3>
-        <p className="text-xs text-slate-500 dark:text-slate-400">
-          No checkout abandonments detected yet. Customer checkout activity is automatically tracked.
-        </p>
-      </div>
-    );
-  }
+  // Filter exclusively for currently open / unrecovered abandoned sessions (status === "ABANDONED")
+  const openSessions = sessions.filter((s) => s.status === "ABANDONED");
 
   const formatCurrency = (val: number) => {
     return new Intl.NumberFormat("en-IN", {
@@ -37,16 +27,29 @@ export default function AbandonedCheckoutsSection({
     }).format(val);
   };
 
+  if (!openSessions || openSessions.length === 0) {
+    return (
+      <div className="p-8 rounded-2xl bg-white border border-slate-200 dark:bg-[#141326]/90 dark:border-purple-900/20 shadow-md text-center space-y-2">
+        <h3 className="text-sm font-bold text-slate-900 dark:text-white uppercase tracking-wider">
+          Open Abandoned Checkouts (0)
+        </h3>
+        <p className="text-xs text-slate-500 dark:text-slate-400">
+          No open checkout abandonments currently awaiting recovery. All detected sessions are either active or successfully recovered.
+        </p>
+      </div>
+    );
+  }
+
   return (
     <div className="p-6 rounded-2xl bg-white border border-slate-200 dark:bg-[#141326]/90 dark:border-purple-900/20 shadow-md space-y-4 transition-colors duration-200">
       <div className="flex items-center justify-between">
         <div>
           <h3 className="text-sm font-bold text-slate-900 dark:text-white uppercase tracking-wider flex items-center gap-2">
             <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse" />
-            Abandoned Checkouts ({sessions.length})
+            Open Abandoned Checkouts ({openSessions.length})
           </h3>
           <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-            Identify and recover inactive customer checkout sessions using Gemini AI strategies.
+            Identify and recover currently open/unrecovered customer checkout sessions using Gemini AI strategies.
           </p>
         </div>
       </div>
@@ -64,7 +67,7 @@ export default function AbandonedCheckoutsSection({
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100 dark:divide-purple-900/20 text-xs">
-            {sessions.map((sess) => (
+            {openSessions.map((sess) => (
               <tr key={sess.sessionId} className="hover:bg-slate-50 dark:hover:bg-white/[0.02] transition-colors">
                 <td className="px-4 py-3 font-mono text-purple-600 dark:text-purple-300 text-[11px]">
                   {sess.sessionId.slice(0, 16)}...

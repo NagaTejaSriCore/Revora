@@ -71,9 +71,9 @@ export default function MetricsOverview({ metrics }: MetricsOverviewProps) {
       badgeStyle: "bg-rose-500/10 border-rose-500/20 text-rose-600 dark:text-rose-400",
     },
     {
-      name: "Abandoned Checkouts",
+      name: "Total Abandonments Detected",
       value: abandonedCheckoutsCount.toLocaleString("en-IN"),
-      subtext: "Checkout Abandonment Sessions",
+      subtext: "Cumulative Detected Opportunities",
       badgeText: "Abandonment Recovery",
       icon: (
         <svg className="w-4 h-4 text-amber-500 dark:text-amber-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
