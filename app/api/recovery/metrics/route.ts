@@ -72,20 +72,18 @@ export async function GET(req: Request) {
       0
     );
 
-    // Fetch captured payments corresponding to checkout abandonments
-    const { data: capturedPayments } = await supabase
-      .from("payments")
-      .select("id, amount, razorpay_payment_id, notes")
-      .eq("status", "captured");
+    // Single authoritative calculation for completed abandoned checkout recoveries:
+    // A checkout session counts as a successful abandonment recovery ONLY when its payment is captured
+    // (status === "COMPLETED_CAPTURED") and it was previously abandoned (abandoned_at != null).
+    const completedAbandonedSessions = sessionsList.filter(
+      (s) => s.status === "COMPLETED_CAPTURED" && s.abandoned_at != null
+    );
 
-    const capturedList = capturedPayments || [];
-    const abCapturedPayments = capturedList.filter((p) => {
-      const notes = p.notes || {};
-      return notes.recovery_session_id || notes.is_recovery === "true";
-    });
-
-    const abSuccesses = sessionsList.filter((s) => s.status === "COMPLETED_CAPTURED" && s.abandoned_at).length + abCapturedPayments.length;
-    const abRecoveredPaise = abCapturedPayments.reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
+    const abSuccesses = completedAbandonedSessions.length;
+    const abRecoveredPaise = completedAbandonedSessions.reduce(
+      (sum, s) => sum + Math.round((Number(s.cart_value) || 0) * 100),
+      0
+    );
     const abOutstandingPaise = Math.max(0, abAtRiskPaise - abRecoveredPaise);
     const abRecoveryRate = abAtRiskPaise > 0 ? Math.min(100, (abRecoveredPaise / abAtRiskPaise) * 100) : 0;
 

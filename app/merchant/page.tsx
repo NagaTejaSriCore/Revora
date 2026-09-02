@@ -462,12 +462,15 @@ export default function MerchantDashboard() {
               </button>
             )}
 
-            {abandonedCount > 0 && (
-              <span className="text-[10px] font-bold text-amber-600 dark:text-amber-400 uppercase tracking-widest bg-amber-500/10 px-3 py-1 rounded-full border border-amber-500/20 flex items-center gap-1.5">
-                <span className="w-1.5 h-1.5 rounded-full bg-amber-500 dark:bg-amber-400 animate-pulse" />
-                CHECKOUT ABANDONMENTS: {abandonedCount} DETECTED
-              </span>
-            )}
+            {(() => {
+              const headerCount = metrics?.totalAbandonedCheckouts ?? metrics?.abandonment?.abandonedSessions ?? abandonedCount;
+              return headerCount > 0 ? (
+                <span className="text-[10px] font-bold text-amber-600 dark:text-amber-400 uppercase tracking-widest bg-amber-500/10 px-3 py-1 rounded-full border border-amber-500/20 flex items-center gap-1.5">
+                  <span className="w-1.5 h-1.5 rounded-full bg-amber-500 dark:bg-amber-400 animate-pulse" />
+                  CHECKOUT ABANDONMENTS: {headerCount} DETECTED
+                </span>
+              ) : null;
+            })()}
 
             <span className="text-[10px] font-bold text-purple-600 dark:text-slate-400 uppercase tracking-widest bg-purple-500/10 px-3 py-1 rounded-full border border-purple-500/20">
               V1.0.0 (AUTH PROTECTED)
