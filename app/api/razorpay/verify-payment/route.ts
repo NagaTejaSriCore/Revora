@@ -158,6 +158,19 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // 5. Reconcile associated checkout_session if this payment was for a session
+    const targetSessionId = notes?.session_id || notes?.recovery_session_id;
+    if (targetSessionId) {
+      console.log(`[VERIFY PAYMENT] Reconciling checkout_session ${targetSessionId} to COMPLETED_CAPTURED...`);
+      await supabase
+        .from("checkout_sessions")
+        .update({
+          status: "COMPLETED_CAPTURED",
+          last_checkout_step: "payment_captured",
+        })
+        .eq("session_id", targetSessionId);
+    }
+
     return NextResponse.json({
       success: true,
       paymentId: savedPaymentRecord.id,

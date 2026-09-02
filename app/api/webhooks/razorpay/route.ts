@@ -377,6 +377,19 @@ export async function POST(request: NextRequest) {
               .eq("id", linkedCase.id);
           }
         }
+
+        // 3. Reconcile associated checkout_session if targetSessionId exists in notes
+        const targetSessionId = payment.notes?.session_id || payment.notes?.recovery_session_id;
+        if (targetSessionId) {
+          console.log("Updating checkout session status to COMPLETED_CAPTURED for session:", targetSessionId);
+          await supabase
+            .from("checkout_sessions")
+            .update({
+              status: "COMPLETED_CAPTURED",
+              last_checkout_step: "payment_captured",
+            })
+            .eq("session_id", targetSessionId);
+        }
       }
     }
 
