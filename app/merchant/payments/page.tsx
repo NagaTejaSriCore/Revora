@@ -63,7 +63,10 @@ export default function PaymentFailuresPage() {
 
       await fetchDashboardData();
       if (selectedCase && selectedCase.id === caseId) {
-        setSelectedCase((prev) => (prev ? { ...prev, ...result.data } : null));
+        const updatedCase = result.case || result.data;
+        if (updatedCase) {
+          setSelectedCase((prev) => (prev ? { ...prev, ...updatedCase } : null));
+        }
       }
     } catch (err: any) {
       console.error("Recovery action execution error:", err);

@@ -102,16 +102,13 @@ export async function POST(request: Request) {
 
     // Duplicate link request check: if payment_link_url already generated and action attempted
     if (action_type === "payment_link" && parsedDiagnosis.payment_link_url && recoveryCase.action_status === "attempted") {
-      return NextResponse.json(
-        {
-          success: false,
-          error: "A recovery payment link has already been generated for this case.",
-          payment_link_url: parsedDiagnosis.payment_link_url,
-          case: recoveryCase,
-          alreadyExisted: true
-        },
-        { status: 400 }
-      );
+      return NextResponse.json({
+        success: true,
+        message: "A recovery payment link has already been generated for this case.",
+        payment_link_url: parsedDiagnosis.payment_link_url,
+        case: recoveryCase,
+        alreadyExisted: true
+      });
     }
 
     // If duplicate simulation action for non-link actions
